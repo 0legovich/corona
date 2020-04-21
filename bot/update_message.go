@@ -43,7 +43,60 @@ type CoronaInfo struct {
 
 var client = &http.Client{}
 
+var comands = map[string]string{ "/start": "/start", "/countries": "/countries" }
+
 func (update *UpdateMessage) Process(bot *Bot) {
+	if comands[update.Message.Text] != "" {
+		update.processCommand(bot)
+	} else {
+		update.processMessage(bot)
+	}
+}
+
+func (update *UpdateMessage) processCommand(bot *Bot) {
+	switch comands[update.Message.Text]  {
+	case "/start":
+		bot.PublishMessage("Привет. Присылай название страны (на латинском), пришлю стату. (список всех стран: /countries)", update.Message.From.Id)
+	case "/countries":
+		req, err := http.NewRequest("GET", "https://covid-193.p.rapidapi.com/countries", nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		req.Header.Add("X-RapidAPI-Key", bot.config.XRapidAPIKey)
+		req.Header.Add("x-rapidapi-host", "covid-193.p.rapidapi.com")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			bot.PublishMessage("Что-то пошло не так :(", update.Message.From.Id)
+			return
+		}
+
+		respBody, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		var responseMap map[string]json.RawMessage
+		if err := json.Unmarshal(respBody, &responseMap); err != nil {
+			log.Fatal(err)
+		}
+
+		var countries []string
+		if err := json.Unmarshal(responseMap["response"], &countries); err != nil {
+			log.Fatal(err)
+		}
+
+		bot.PublishMessage("Список стран: \n" + strings.Join(countries[:], "\n"), update.Message.From.Id)
+	}
+}
+
+func (update *UpdateMessage) processMessage(bot *Bot) {
 	req, err := http.NewRequest("GET", "https://covid-193.p.rapidapi.com/history?country=" + strings.Replace(update.Message.Text, " ", "%20", -1), nil)
 	if err != nil {
 		log.Fatal(err)
